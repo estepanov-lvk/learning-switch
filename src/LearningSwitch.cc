@@ -71,8 +71,8 @@ void LearningSwitch::init(Loader* loader, const Config& config)
             } else if (pkt.test(oxm::eth_type() == 0x0806)) {
                 ip_src = pkt.load(oxm::arp_spa());
             }
-            send_unicast(host_info->switchID(), host_info->switchPort(), pi);
             set_path(ipv4addr(htonl(ip_src)), ipv4addr(ip_dst), pkt.load(oxm::in_port()));
+            send_unicast(host_info->switchID(), host_info->switchPort(), pi);
         } else {
             for (const auto& switch_ptr : switch_manager_->switches()) {
                 send_broadcast(switch_ptr->dpid(), pi);
