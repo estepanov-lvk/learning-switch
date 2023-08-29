@@ -45,22 +45,22 @@ void LearningSwitch::init(Loader* loader, const Config& config)
     handler_ = Controller::get(loader)->register_handler(
     [=](of13::PacketIn& pi, OFConnectionPtr ofconn) mutable -> bool
     {
-        LOG(INFO) << "got packetin";
+        // LOG(INFO) << "got packetin";
         PacketParser pp(pi);
         runos::Packet& pkt(pp);
 
-        LOG(INFO) << "type " << std::hex << pkt.load(oxm::eth_type());
+        // LOG(INFO) << "type " << std::hex << pkt.load(oxm::eth_type());
         uint32_t ip_dst;
         if (pkt.test(oxm::eth_type() == 0x0800)) {
             ip_dst = pkt.load(oxm::ipv4_dst());
         } else if (pkt.test(oxm::eth_type() == 0x0806)) {
             ip_dst = pkt.load(oxm::arp_tpa());
         } else {
-            LOG(INFO) << "unknown packet type, dropping";
+            // LOG(INFO) << "unknown packet type, dropping";
             return false;
         }
         ip_dst = htonl(ip_dst);
-        LOG(INFO) << "got dst ip " << PrettyIP(ip_dst);
+        // LOG(INFO) << "got dst ip " << PrettyIP(ip_dst);
 
         auto host_info = host_manager_->getHost(ipv4addr(htonl(ip_dst)));
 
@@ -99,22 +99,25 @@ void LearningSwitch::onSwitchUp(SwitchPtr sw)
 void LearningSwitch::send_unicast(uint32_t dpid, uint32_t port,
                             const of13::PacketIn& pi)
 {
-    LOG(INFO) << "sending to dpid " << dpid << " port " << port;
+    // LOG(INFO) << "sending to dpid " << dpid << " port " << port;
     of13::PacketOut po;
     po.data(pi.data(), pi.data_len());
     of13::OutputAction output_action(port, of13::OFPCML_NO_BUFFER);
     po.add_action(output_action);
     auto sw = switch_manager_->switch_(dpid);
-    LOG(INFO) << "got switch";
+    // LOG(INFO) << "got switch";
     auto conn = sw->connection();
-    LOG(INFO) << "got conn";
+    // LOG(INFO) << "got conn";
+    if (!conn->alive()) {
+        // LOG(INFO) << "CONN IS BROKEN";
+    }
     conn->send(po);
-    LOG(INFO) << "sent packet";
+    // LOG(INFO) << "sent packet";
 }
 
 void LearningSwitch::send_broadcast(uint32_t dpid, const of13::PacketIn& pi)
 {
-    LOG(INFO) << "broadcast dpid " << dpid;
+    // LOG(INFO) << "broadcast dpid " << dpid;
     of13::PacketOut po;
     po.data(pi.data(), pi.data_len());
     //po.in_port(in_port_);
@@ -138,7 +141,7 @@ void LearningSwitch::send_broadcast(uint32_t dpid, const of13::PacketIn& pi)
         if (send_msg) {
             of13::OutputAction output_action(port_ptr->number(), of13::OFPCML_NO_BUFFER);
             po.add_action(output_action);
-            LOG(INFO) << "sent to port " << port_ptr->number();
+            // LOG(INFO) << "sent to port " << port_ptr->number();
         }
     }
     //of13::OutputAction output_action(of13::OFPP_ALL, of13::OFPCML_NO_BUFFER);
@@ -151,7 +154,7 @@ void LearningSwitch::set_path(ipv4addr src, ipv4addr dst, uint32_t in_port) {
     auto dst_port = host_manager_->getHost(ipv4addr(htonl(uint32_t(dst))))->switchPort();
     auto src_dpid = host_manager_->getHost(ipv4addr(htonl(uint32_t(src))))->switchID();
     auto src_port = host_manager_->getHost(ipv4addr(htonl(uint32_t(src))))->switchPort();
-    LOG(INFO) << "setting path from " << src_dpid << ":" << src_port << " to " << dst_dpid << ":" << dst_port;
+    // LOG(INFO) << "setting path from " << src_dpid << ":" << src_port << " to " << dst_dpid << ":" << dst_port;
     auto route_id_raw = routes_db_.getRoute(src_dpid, dst_dpid);
     if (route_id_raw != boost::none) {
         route_id = *route_id_raw;
@@ -167,15 +170,17 @@ void LearningSwitch::set_path(ipv4addr src, ipv4addr dst, uint32_t in_port) {
     */
 
     for (int i = 0; i < path.size(); i += 2) {
-        set_rule(path[i].dpid, path[i].port, Proto::IP, src, dst, in_port);
-        set_rule(path[i].dpid, path[i].port, Proto::ARP, src, dst, in_port);
+        set_rule(path[i].dpid, path[i].port, Proto::IP, src, dst, in_port, src_dpid);
+        set_rule(path[i].dpid, path[i].port, Proto::ARP, src, dst, in_port, src_dpid);
     }
 
-    set_rule(dst_dpid, dst_port, Proto::IP, src, dst, in_port);
-    set_rule(dst_dpid, dst_port, Proto::ARP, src, dst, in_port);
+    set_rule(dst_dpid, dst_port, Proto::IP, src, dst, in_port, src_dpid);
+    set_rule(dst_dpid, dst_port, Proto::ARP, src, dst, in_port, src_dpid);
 }
 
-void LearningSwitch::set_rule(uint32_t dpid, uint32_t output_port, Proto proto, ipv4addr src_addr, ipv4addr dst_addr, uint32_t in_port) {
+void LearningSwitch::set_rule(uint32_t dpid, uint32_t output_port, Proto proto,
+    ipv4addr src_addr, ipv4addr dst_addr, uint32_t in_port, uint32_t in_dpid)
+{
     of13::FlowMod fm;
     fm.command(of13::OFPFC_ADD);
     fm.table_id(0);
@@ -184,8 +189,8 @@ void LearningSwitch::set_rule(uint32_t dpid, uint32_t output_port, Proto proto, 
     fm.idle_timeout(uint64_t(100));
     fm.hard_timeout(uint64_t(100));
     uint64_t random_id = std::experimental::randint(0ull, 1ull << 32);
-    auto new_cookie = (random_id << 32) | in_port;
-    // LOG(INFO) << "Generated flow with cookie " << new_cookie;
+    auto new_cookie = (random_id << 32) | (in_port << 16) | in_dpid;
+    // LOG(INFO) << "in_dpid " << in_dpid << " in_port " << in_port;
     fm.cookie(new_cookie);
     fm.flags(of13::OFPFF_SEND_FLOW_REM);
 

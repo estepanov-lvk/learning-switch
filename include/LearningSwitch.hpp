@@ -65,7 +65,8 @@ private:
     void send_broadcast(uint32_t dpid, const of13::PacketIn& pi);
 
     void set_path(ipv4addr src, ipv4addr dst, uint32_t in_port);
-    void set_rule(uint32_t dpid, uint32_t output_port, Proto proto, ipv4addr src_addr, ipv4addr dst_addr, uint32_t in_port);
+    void set_rule(uint32_t dpid, uint32_t output_port, Proto proto, ipv4addr src_addr, 
+                  ipv4addr dst_addr, uint32_t in_port, uint32_t in_dpid);
 };
 
 } // namespace runos
