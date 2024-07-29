@@ -71,8 +71,17 @@ void LearningSwitch::init(Loader* loader, const Config& config)
             } else if (pkt.test(oxm::eth_type() == 0x0806)) {
                 ip_src = pkt.load(oxm::arp_spa());
             }
-            set_path(ipv4addr(htonl(ip_src)), ipv4addr(ip_dst), pkt.load(oxm::in_port()));
-            send_unicast(host_info->switchID(), host_info->switchPort(), pi);
+
+	    auto in_port = pkt.load(oxm::in_port());
+	    auto pi_copy = new of13::PacketIn(pi);
+	    pi_copy->data(pi.data(), pi.data_len());
+
+	    async(executor, [=]() {
+            	set_path(ipv4addr(htonl(ip_src)), ipv4addr(ip_dst), in_port);
+            	send_unicast(host_info->switchID(), host_info->switchPort(), pi_copy);
+
+		delete pi_copy;
+	    });
         } else {
             for (const auto& switch_ptr : switch_manager_->switches()) {
                 send_broadcast(switch_ptr->dpid(), pi);
@@ -97,11 +106,11 @@ void LearningSwitch::onSwitchUp(SwitchPtr sw)
 }
 
 void LearningSwitch::send_unicast(uint32_t dpid, uint32_t port,
-                            const of13::PacketIn& pi)
+                            of13::PacketIn* pi)
 {
     // LOG(INFO) << "sending to dpid " << dpid << " port " << port;
     of13::PacketOut po;
-    po.data(pi.data(), pi.data_len());
+    po.data(pi->data(), pi->data_len());
     of13::OutputAction output_action(port, of13::OFPCML_NO_BUFFER);
     po.add_action(output_action);
     auto sw = switch_manager_->switch_(dpid);

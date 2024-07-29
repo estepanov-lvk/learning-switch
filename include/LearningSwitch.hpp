@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <lib/ethaddr.hpp>
 #include <lib/ipv4addr.hpp>
+#include <lib/qt_executor.hpp>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -57,11 +58,12 @@ private:
     Topology* topology_;
     ILinkDiscovery* link_discovery_;
     RoutesDatabase routes_db_;
+    qt_executor executor{this};
 
     boost::shared_mutex mutex_;
     std::unordered_set<ethaddr> macs_to_resolve_;
 
-    void send_unicast(uint32_t dpid, uint32_t port, const of13::PacketIn& pi);
+    void send_unicast(uint32_t dpid, uint32_t port, of13::PacketIn* pi);
     void send_broadcast(uint32_t dpid, const of13::PacketIn& pi);
 
     void set_path(ipv4addr src, ipv4addr dst, uint32_t in_port);
